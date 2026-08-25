@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip -l \"/Users/jadatoui/.gradle/caches/modules-2/files-2.1/androidx.compose.foundation/foundation-layout-android/1.7.6/c30fcc13ba6e6f10f524c3e5b3fee1f92ead2616/foundation-layout-1.7.6-samples-sources.jar\")",
+      "Bash(export JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\")",
+      "Bash(./gradlew :app:compileDebugKotlin -q)",
+      "Bash(./gradlew :app:assembleDebug -q)",
+      "Bash(./gradlew :app:compileDebugKotlin)",
+      "Bash(./gradlew compileDebugKotlin -q)",
+      "Bash(xargs ls -la)",
+      "mcp__claude_ai_n8n__search_workflows",
+      "mcp__claude_ai_n8n__get_workflow_details",
+      "Bash(./gradlew assembleDebug -q)",
+      "Bash(xargs cat)"
+    ]
+  }
+}
