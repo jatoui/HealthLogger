@@ -280,6 +280,7 @@ fun LogScreen(
                             awaitingHealthSend = true
                             onLog(type, entry.ifBlank { null }, color)
                             entry = ""
+                            color = EntryColor.NONE
                         },
                         enabled = !state.sending &&
                             (type != EntryType.FOOD || entry.isNotBlank()),
