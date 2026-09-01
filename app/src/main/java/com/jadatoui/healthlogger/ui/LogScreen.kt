@@ -196,16 +196,13 @@ fun LogScreen(
                         QuickActionSpec("ADHD", Icons.Default.Medication) {
                             onLog(EntryType.MED, "adhd", EntryColor.NONE)
                         },
-                        QuickActionSpec("Linzess", Icons.Default.Medication) {
-                            onLog(EntryType.MED, "linzess", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Motility", Icons.Default.Medication) {
-                            onLog(EntryType.MED, "motility activator", EntryColor.NONE)
-                        },
                         QuickActionSpec("Prucalopride", Icons.Default.Medication) {
                             onLog(EntryType.MED, "prucalopride", EntryColor.NONE)
                         },
                         // Poop
+                        QuickActionSpec("Poop", Icons.Default.Wc) {
+                            onLog(EntryType.POOP, null, EntryColor.NONE)
+                        },
                         QuickActionSpec("Diarrhea", Icons.Default.Wc) {
                             onLog(EntryType.POOP, "diarrhea", EntryColor.RED)
                         },
