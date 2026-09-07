@@ -76,6 +76,7 @@ fun LogScreen(
     onModeChange: (LogMode) -> Unit,
     onLogDiary: (String) -> Unit,
     onUndoDiary: () -> Unit,
+    onFetchInsights: () -> Unit,
 ) {
     var entry by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(EntryType.FOOD) }
@@ -133,6 +134,11 @@ fun LogScreen(
                     onClick = { onModeChange(LogMode.DIARY) },
                     label = { Text("Diary") },
                 )
+                FilterChip(
+                    selected = state.mode == LogMode.INSIGHTS,
+                    onClick = { onModeChange(LogMode.INSIGHTS) },
+                    label = { Text("Insights") },
+                )
             }
 
             if (!state.settings.isConfigured) {
@@ -156,7 +162,13 @@ fun LogScreen(
                 }
             }
 
-            if (state.mode == LogMode.HEALTH) {
+            if (state.mode == LogMode.INSIGHTS) {
+                InsightsPanel(
+                    state = state,
+                    onFetchInsights = onFetchInsights,
+                    onOpenSettings = onOpenSettings,
+                )
+            } else if (state.mode == LogMode.HEALTH) {
                 Text("Quick log", style = MaterialTheme.typography.titleSmall)
 
                 QuickActionGrid(
@@ -351,29 +363,99 @@ fun LogScreen(
                 }
             }
 
-            if (state.retry != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            if (state.mode != LogMode.INSIGHTS) {
+                if (state.retry != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            "That didn't send.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(onClick = onRetry) { Text("Retry") }
+                    }
+                }
+
+                HorizontalDivider()
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(
-                        "That didn't send.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    TextButton(onClick = onRetry) { Text("Retry") }
+                    state.feed.forEach { item -> FeedRow(item) }
                 }
             }
+        }
+    }
+}
 
-            HorizontalDivider()
+@Composable
+private fun InsightsPanel(
+    state: UiState,
+    onFetchInsights: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val insights = state.insights
 
+    Text("AI insights", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Compares this month's log against last month's using Claude, based on " +
+            "food, poop, med, and piss entries.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    if (!state.settings.isInsightsConfigured) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text("Not connected", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Add the insights webhook URL in Settings first.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = onOpenSettings) { Text("Open settings") }
+            }
+        }
+        return
+    }
+
+    Button(
+        onClick = onFetchInsights,
+        enabled = !insights.loading,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        if (insights.loading) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+            Text(if (insights.intel != null) "Refresh insights" else "Generate insights")
+        }
+    }
+
+    if (insights.error != null) {
+        Text(
+            insights.error,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+
+    if (insights.intel != null) {
+        Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                state.feed.forEach { item -> FeedRow(item) }
+                if (insights.period != null) {
+                    Text(insights.period, style = MaterialTheme.typography.labelMedium)
+                }
+                Text(insights.intel, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }

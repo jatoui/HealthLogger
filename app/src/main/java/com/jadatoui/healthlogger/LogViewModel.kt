@@ -8,6 +8,7 @@ import com.jadatoui.healthlogger.data.SettingsStore
 import com.jadatoui.healthlogger.net.EntryColor
 import com.jadatoui.healthlogger.net.EntryType
 import com.jadatoui.healthlogger.net.HealthLogClient
+import com.jadatoui.healthlogger.net.InsightsResult
 import com.jadatoui.healthlogger.net.LogResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +33,15 @@ data class PendingRetry(
     val isDiary: Boolean = false,
 )
 
-enum class LogMode { HEALTH, DIARY }
+enum class LogMode { HEALTH, DIARY, INSIGHTS }
+
+/** Result of the last AI insights request, shown on the Insights tab. */
+data class InsightsState(
+    val loading: Boolean = false,
+    val period: String? = null,
+    val intel: String? = null,
+    val error: String? = null,
+)
 
 data class UiState(
     val settings: Settings = Settings(),
@@ -40,6 +49,7 @@ data class UiState(
     val feed: List<FeedEntry> = emptyList(),
     val retry: PendingRetry? = null,
     val mode: LogMode = LogMode.HEALTH,
+    val insights: InsightsState = InsightsState(),
 )
 
 class LogViewModel(app: Application) : AndroidViewModel(app) {
@@ -80,6 +90,21 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
 
     fun logDiary(text: String) {
         dispatch(PendingRetry(null, text, EntryColor.NONE, isUndo = false, isDiary = true))
+    }
+
+    fun fetchInsights() {
+        if (_state.value.insights.loading) return
+        _state.update { it.copy(insights = it.insights.copy(loading = true, error = null)) }
+
+        viewModelScope.launch {
+            val settings = _state.value.settings
+            val next = when (val result = client.fetchInsights(settings)) {
+                is InsightsResult.Success -> InsightsState(period = result.period, intel = result.intel)
+                is InsightsResult.Rejected -> InsightsState(error = result.message)
+                is InsightsResult.Failure -> InsightsState(error = result.message)
+            }
+            _state.update { it.copy(insights = next) }
+        }
     }
 
     fun retry() {

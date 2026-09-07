@@ -35,6 +35,7 @@ fun SettingsScreen(
 ) {
     var url by remember(current) { mutableStateOf(current.webhookUrl) }
     var diaryUrl by remember(current) { mutableStateOf(current.diaryUrl) }
+    var insightsUrl by remember(current) { mutableStateOf(current.insightsUrl) }
     var headerName by remember(current) { mutableStateOf(current.headerName) }
     var headerValue by remember(current) { mutableStateOf(current.headerValue) }
 
@@ -59,8 +60,8 @@ fun SettingsScreen(
         ) {
             Text(
                 "These must match the App Webhook node and its Header Auth " +
-                    "credential in n8n. The health and diary webhooks share the " +
-                    "same auth header.",
+                    "credential in n8n. The health, diary, and insights webhooks " +
+                    "share the same auth header.",
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -78,6 +79,15 @@ fun SettingsScreen(
                 onValueChange = { diaryUrl = it },
                 label = { Text("Diary webhook URL") },
                 placeholder = { Text("https://…/webhook/daily-log") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = insightsUrl,
+                onValueChange = { insightsUrl = it },
+                label = { Text("Insights webhook URL") },
+                placeholder = { Text("https://…/webhook/health-insights") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -102,7 +112,7 @@ fun SettingsScreen(
 
             Button(
                 onClick = {
-                    onSave(Settings(url, diaryUrl, headerName, headerValue))
+                    onSave(Settings(url, diaryUrl, insightsUrl, headerName, headerValue))
                     onBack()
                 },
                 modifier = Modifier.fillMaxWidth(),

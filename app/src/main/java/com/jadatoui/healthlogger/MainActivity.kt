@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
                         onModeChange = vm::setMode,
                         onLogDiary = vm::logDiary,
                         onUndoDiary = vm::undoDiary,
+                        onFetchInsights = vm::fetchInsights,
                     )
                 }
             }

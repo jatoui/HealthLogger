@@ -65,6 +65,24 @@ sealed interface LogResult {
     data class Failure(val message: String, val retryable: Boolean) : LogResult
 }
 
+/** Shape produced by the "Build Insights Response" node in n8n. */
+@Serializable
+data class InsightsResponse(
+    val ok: Boolean = false,
+    val period: String? = null,
+    val intel: String? = null,
+    val reason: String? = null,
+    val message: String = "",
+)
+
+sealed interface InsightsResult {
+    data class Success(val period: String?, val intel: String) : InsightsResult
+    /** Reached the workflow, but it couldn't produce a summary (e.g. no data logged yet). */
+    data class Rejected(val message: String) : InsightsResult
+    /** Never reached the workflow, or the workflow errored. Safe to retry. */
+    data class Failure(val message: String, val retryable: Boolean) : InsightsResult
+}
+
 class HealthLogClient {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -142,7 +160,55 @@ class HealthLogClient {
         )
     }
 
+    suspend fun fetchInsights(settings: Settings): InsightsResult {
+        if (!settings.isInsightsConfigured) {
+            return InsightsResult.Failure(
+                "Set the insights webhook URL in Settings first.",
+                retryable = false,
+            )
+        }
+        return when (val raw = postRaw(settings.insightsUrl, settings, "{}")) {
+            is RawResponse.Body -> {
+                val parsed = runCatching {
+                    json.decodeFromString(InsightsResponse.serializer(), raw.text)
+                }.getOrNull()
+                    ?: return InsightsResult.Failure(
+                        "Could not read the workflow's response.",
+                        retryable = false,
+                    )
+
+                if (parsed.ok) {
+                    InsightsResult.Success(parsed.period, parsed.intel ?: parsed.message)
+                } else {
+                    InsightsResult.Rejected(parsed.message.ifBlank { "No insights available yet." })
+                }
+            }
+            is RawResponse.Failure -> InsightsResult.Failure(raw.message, raw.retryable)
+        }
+    }
+
     private suspend fun post(url: String, settings: Settings, body: String): LogResult =
+        when (val raw = postRaw(url, settings, body)) {
+            is RawResponse.Body -> {
+                val parsed = runCatching {
+                    json.decodeFromString(LogResponse.serializer(), raw.text)
+                }.getOrNull()
+                    ?: return LogResult.Failure(
+                        "Could not read the workflow's response.",
+                        retryable = false,
+                    )
+
+                if (parsed.ok) LogResult.Success(parsed) else LogResult.Rejected(parsed)
+            }
+            is RawResponse.Failure -> LogResult.Failure(raw.message, raw.retryable)
+        }
+
+    private sealed interface RawResponse {
+        data class Body(val text: String) : RawResponse
+        data class Failure(val message: String, val retryable: Boolean) : RawResponse
+    }
+
+    private suspend fun postRaw(url: String, settings: Settings, body: String): RawResponse =
         withContext(Dispatchers.IO) {
             val requestBody = body.toRequestBody("application/json".toMediaType())
 
@@ -154,7 +220,7 @@ class HealthLogClient {
 
             try {
                 http.newCall(request).execute().use { response ->
-                    val raw = response.body?.string().orEmpty()
+                    val text = response.body?.string().orEmpty()
 
                     if (!response.isSuccessful) {
                         val hint = when (response.code) {
@@ -162,21 +228,13 @@ class HealthLogClient {
                             404 -> "Webhook not found (404). Is the workflow active, and is the URL the production one?"
                             else -> "Server returned ${response.code}."
                         }
-                        return@use LogResult.Failure(hint, retryable = response.code >= 500)
+                        return@use RawResponse.Failure(hint, retryable = response.code >= 500)
                     }
 
-                    val parsed = runCatching {
-                        json.decodeFromString(LogResponse.serializer(), raw)
-                    }.getOrNull()
-                        ?: return@use LogResult.Failure(
-                            "Could not read the workflow's response.",
-                            retryable = false,
-                        )
-
-                    if (parsed.ok) LogResult.Success(parsed) else LogResult.Rejected(parsed)
+                    RawResponse.Body(text)
                 }
             } catch (e: IOException) {
-                LogResult.Failure(
+                RawResponse.Failure(
                     e.message?.let { "Network error: $it" } ?: "No connection.",
                     retryable = true,
                 )
