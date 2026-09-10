@@ -1,14 +1,25 @@
 package com.jadatoui.healthlogger.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -47,12 +58,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -380,14 +395,19 @@ fun LogScreen(
 
                 HorizontalDivider()
 
-                Column(
+                Text(
+                    "Today's log (${state.feed.size})",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                FeedList(
+                    items = state.feed,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .height(320.dp)
                         .padding(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    state.feed.forEach { item -> FeedRow(item) }
-                }
+                )
             }
         }
     }
@@ -527,6 +547,77 @@ private fun QuickAction(
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun FeedList(items: List<FeedEntry>, modifier: Modifier = Modifier) {
+    val listState = rememberLazyListState()
+
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(end = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(items) { item -> FeedRow(item) }
+        }
+
+        val needsScrollbar by remember(items.size) {
+            derivedStateOf {
+                val info = listState.layoutInfo
+                info.totalItemsCount > info.visibleItemsInfo.size
+            }
+        }
+        if (needsScrollbar) {
+            FeedScrollbar(
+                state = listState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(6.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FeedScrollbar(state: LazyListState, modifier: Modifier = Modifier) {
+    val targetAlpha = if (state.isScrollInProgress) 0.9f else 0.4f
+    val alpha by animateFloatAsState(
+        targetValue = targetAlpha,
+        animationSpec = tween(durationMillis = if (state.isScrollInProgress) 100 else 500),
+        label = "feedScrollbarAlpha",
+    )
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+
+    Canvas(modifier = modifier) {
+        val layoutInfo = state.layoutInfo
+        val totalItems = layoutInfo.totalItemsCount
+        val visibleItems = layoutInfo.visibleItemsInfo
+        if (totalItems == 0 || visibleItems.isEmpty()) return@Canvas
+
+        val averageItemHeight = layoutInfo.visibleItemsInfo.sumOf { it.size } / visibleItems.size.toFloat()
+        val estimatedContentHeight = averageItemHeight * totalItems
+        val firstVisible = visibleItems.first()
+        val scrolledPastPx = firstVisible.index * averageItemHeight - firstVisible.offset
+
+        val visibleRatio = (layoutInfo.viewportSize.height / estimatedContentHeight).coerceIn(0f, 1f)
+        val thumbHeight = (size.height * visibleRatio).coerceAtLeast(24.dp.toPx())
+        val maxThumbOffset = size.height - thumbHeight
+        val scrollRatio = (scrolledPastPx / (estimatedContentHeight - layoutInfo.viewportSize.height))
+            .coerceIn(0f, 1f)
+        val thumbOffset = if (maxThumbOffset > 0f) maxThumbOffset * scrollRatio else 0f
+
+        drawRoundRect(
+            color = color,
+            alpha = alpha,
+            topLeft = Offset(0f, thumbOffset),
+            size = Size(size.width, thumbHeight),
+            cornerRadius = CornerRadius(size.width / 2),
         )
     }
 }

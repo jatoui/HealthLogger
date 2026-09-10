@@ -3,8 +3,12 @@ package com.jadatoui.healthlogger
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.jadatoui.healthlogger.data.FeedStore
+import com.jadatoui.healthlogger.data.InsightsStore
 import com.jadatoui.healthlogger.data.Settings
 import com.jadatoui.healthlogger.data.SettingsStore
+import com.jadatoui.healthlogger.data.StoredFeedEntry
+import com.jadatoui.healthlogger.data.StoredInsights
 import com.jadatoui.healthlogger.net.EntryColor
 import com.jadatoui.healthlogger.net.EntryType
 import com.jadatoui.healthlogger.net.HealthLogClient
@@ -13,6 +17,7 @@ import com.jadatoui.healthlogger.net.LogResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -20,6 +25,7 @@ import kotlinx.coroutines.launch
 data class FeedEntry(
     val text: String,
     val status: Status,
+    val timestampMillis: Long = System.currentTimeMillis(),
 ) {
     enum class Status { OK, WARN, ERROR }
 }
@@ -55,6 +61,8 @@ data class UiState(
 class LogViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = SettingsStore(app)
+    private val feedStore = FeedStore(app)
+    private val insightsStore = InsightsStore(app)
     private val client = HealthLogClient()
 
     private val _state = MutableStateFlow(UiState())
@@ -64,6 +72,21 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             store.settings.collect { loaded ->
                 _state.update { it.copy(settings = loaded) }
+            }
+        }
+        viewModelScope.launch {
+            val restored = feedStore.todaysEntries.first().map { stored ->
+                FeedEntry(stored.text, FeedEntry.Status.valueOf(stored.status), stored.timestampMillis)
+            }
+            if (restored.isNotEmpty()) {
+                _state.update { it.copy(feed = restored) }
+            }
+        }
+        viewModelScope.launch {
+            insightsStore.lastInsights.first()?.let { restored ->
+                _state.update {
+                    it.copy(insights = it.insights.copy(period = restored.period, intel = restored.intel))
+                }
             }
         }
     }
@@ -98,10 +121,16 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             val settings = _state.value.settings
+            val current = _state.value.insights
             val next = when (val result = client.fetchInsights(settings)) {
-                is InsightsResult.Success -> InsightsState(period = result.period, intel = result.intel)
-                is InsightsResult.Rejected -> InsightsState(error = result.message)
-                is InsightsResult.Failure -> InsightsState(error = result.message)
+                is InsightsResult.Success -> {
+                    insightsStore.save(StoredInsights(result.period, result.intel))
+                    InsightsState(period = result.period, intel = result.intel)
+                }
+                is InsightsResult.Rejected ->
+                    current.copy(loading = false, error = result.message)
+                is InsightsResult.Failure ->
+                    current.copy(loading = false, error = result.message)
             }
             _state.update { it.copy(insights = next) }
         }
@@ -148,13 +177,24 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
                         (action.takeIf { result.retryable })
             }
 
+            val newFeed = listOf(entry) + _state.value.feed
             _state.update {
                 it.copy(
                     sending = false,
-                    feed = (listOf(entry) + it.feed).take(30),
+                    feed = newFeed,
                     retry = retry,
                 )
             }
+            persistFeed(newFeed)
+        }
+    }
+
+    private fun persistFeed(feed: List<FeedEntry>) {
+        viewModelScope.launch {
+            val today = FeedStore.todayString()
+            feedStore.save(
+                feed.map { StoredFeedEntry(it.text, it.status.name, it.timestampMillis, today) },
+            )
         }
     }
 }
