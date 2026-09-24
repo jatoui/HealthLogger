@@ -92,6 +92,11 @@ class HealthLogClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    /** Insights summaries are LLM-generated and can take much longer than a plain log write. */
+    private val insightsHttp = http.newBuilder()
+        .readTimeout(90, TimeUnit.SECONDS)
+        .build()
+
     suspend fun log(
         settings: Settings,
         type: EntryType,
@@ -167,7 +172,7 @@ class HealthLogClient {
                 retryable = false,
             )
         }
-        return when (val raw = postRaw(settings.insightsUrl, settings, "{}")) {
+        return when (val raw = postRaw(settings.insightsUrl, settings, "{}", client = insightsHttp)) {
             is RawResponse.Body -> {
                 val parsed = runCatching {
                     json.decodeFromString(InsightsResponse.serializer(), raw.text)
@@ -208,7 +213,12 @@ class HealthLogClient {
         data class Failure(val message: String, val retryable: Boolean) : RawResponse
     }
 
-    private suspend fun postRaw(url: String, settings: Settings, body: String): RawResponse =
+    private suspend fun postRaw(
+        url: String,
+        settings: Settings,
+        body: String,
+        client: OkHttpClient = http,
+    ): RawResponse =
         withContext(Dispatchers.IO) {
             val requestBody = body.toRequestBody("application/json".toMediaType())
 
@@ -219,7 +229,7 @@ class HealthLogClient {
                 .build()
 
             try {
-                http.newCall(request).execute().use { response ->
+                client.newCall(request).execute().use { response ->
                     val text = response.body?.string().orEmpty()
 
                     if (!response.isSuccessful) {
