@@ -97,7 +97,6 @@ fun LogScreen(
     var type by remember { mutableStateOf(EntryType.FOOD) }
     var color by remember { mutableStateOf(EntryColor.NONE) }
     var colorMenuOpen by remember { mutableStateOf(false) }
-    var med by remember { mutableStateOf(MED_OPTIONS.first()) }
     var medMenuOpen by remember { mutableStateOf(false) }
 
     var diaryText by remember { mutableStateOf("") }
@@ -237,49 +236,37 @@ fun LogScreen(
 
                 Text("Meds", style = MaterialTheme.typography.titleSmall)
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                ExposedDropdownMenuBox(
+                    expanded = medMenuOpen,
+                    onExpandedChange = { if (!state.sending) medMenuOpen = it },
                 ) {
-                    ExposedDropdownMenuBox(
-                        expanded = medMenuOpen,
-                        onExpandedChange = { medMenuOpen = it },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        OutlinedTextField(
-                            value = med.label,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Medication") },
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = medMenuOpen)
-                            },
-                            modifier = Modifier
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                                .fillMaxWidth(),
-                        )
-                        ExposedDropdownMenu(
-                            expanded = medMenuOpen,
-                            onDismissRequest = { medMenuOpen = false },
-                        ) {
-                            MED_OPTIONS.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(option.label) },
-                                    onClick = {
-                                        med = option
-                                        medMenuOpen = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = { onLog(EntryType.MED, med.wire, EntryColor.NONE) },
+                    OutlinedTextField(
+                        value = "",
+                        onValueChange = {},
+                        readOnly = true,
                         enabled = !state.sending,
+                        placeholder = { Text("Tap a medication to log it") },
+                        leadingIcon = { Icon(Icons.Default.Medication, contentDescription = null) },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = medMenuOpen)
+                        },
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = medMenuOpen,
+                        onDismissRequest = { medMenuOpen = false },
                     ) {
-                        Icon(Icons.Default.Medication, contentDescription = null)
-                        Text("Log med", modifier = Modifier.padding(start = 6.dp))
+                        MED_OPTIONS.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                onClick = {
+                                    medMenuOpen = false
+                                    onLog(EntryType.MED, option.wire, option.color)
+                                },
+                            )
+                        }
                     }
                 }
 
@@ -524,15 +511,21 @@ private fun InsightsPanel(
 }
 
 /** Meds offered by the Meds dropdown; [wire] is what the workflow expects. */
-private data class MedOption(val label: String, val wire: String)
+private data class MedOption(
+    val label: String,
+    val wire: String,
+    val color: EntryColor = EntryColor.NONE,
+)
 
 private val MED_OPTIONS = listOf(
-    MedOption("Ibsrela", "ibsrela"),
-    MedOption("Prucalopride", "prucalopride"),
-    MedOption("Motility Activator", "motility activator"),
-    MedOption("Linzess", "linzess"),
     MedOption("ADHD", "adhd"),
-)
+    MedOption("Ibsrela", "ibsrela"),
+    MedOption("Linzess", "linzess"),
+    MedOption("Miralax", "miralax"),
+    MedOption("Motility Activator", "motility activator"),
+    MedOption("Prucalopride", "prucalopride"),
+    MedOption("Suppository", "suppository", EntryColor.RED),
+).sortedBy { it.label.lowercase() }
 
 private data class QuickActionSpec(
     val label: String,
