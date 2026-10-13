@@ -519,12 +519,14 @@ private data class MedOption(
 
 private val MED_OPTIONS = listOf(
     MedOption("ADHD", "adhd"),
+    MedOption("Enema", "enema", EntryColor.RED),
     MedOption("Ibsrela", "ibsrela"),
     MedOption("Linzess", "linzess"),
     MedOption("Miralax", "miralax"),
     MedOption("Motility Activator", "motility activator"),
     MedOption("Prucalopride", "prucalopride"),
     MedOption("Suppository", "suppository", EntryColor.RED),
+    MedOption("Trulance", "trulance"),
 ).sortedBy { it.label.lowercase() }
 
 private data class QuickActionSpec(
