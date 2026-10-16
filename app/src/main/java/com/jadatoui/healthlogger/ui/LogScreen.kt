@@ -106,7 +106,9 @@ fun LogScreen(
     LaunchedEffect(state.sending) {
         if (!state.sending && awaitingDiarySend) {
             awaitingDiarySend = false
-            if (state.retry == null) {
+            // Keep the text if it failed or the server rejected it, so it can be fixed and resent.
+            val rejected = state.diaryFeed.firstOrNull()?.status == FeedEntry.Status.WARN
+            if (state.retry == null && !rejected) {
                 diaryText = ""
             }
         }
@@ -422,16 +424,19 @@ fun LogScreen(
                     }
                 }
 
+                // Each tab shows only its own log.
+                val feed = if (state.mode == LogMode.DIARY) state.diaryFeed else state.feed
+
                 HorizontalDivider()
 
                 Text(
-                    "Today's log (${state.feed.size})",
+                    "Today's log (${feed.size})",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 FeedList(
-                    items = state.feed,
+                    items = feed,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(320.dp)

@@ -29,16 +29,14 @@ data class StoredFeedEntry(
  * phone reboot, etc.) for the rest of the current day. Entries tagged with an older
  * [StoredFeedEntry.day] are dropped on read, so the feed naturally resets each day.
  */
-class FeedStore(private val context: Context) {
+class FeedStore(private val context: Context, key: String = "entries_json") {
 
-    private object Keys {
-        val ENTRIES = stringPreferencesKey("entries_json")
-    }
+    private val entriesKey = stringPreferencesKey(key)
 
     private val json = Json { ignoreUnknownKeys = true }
 
     val todaysEntries: Flow<List<StoredFeedEntry>> = context.feedDataStore.data.map { prefs ->
-        val raw = prefs[Keys.ENTRIES]
+        val raw = prefs[entriesKey]
         if (raw.isNullOrBlank()) return@map emptyList()
         val all = runCatching { json.decodeFromString<List<StoredFeedEntry>>(raw) }.getOrDefault(emptyList())
         val today = todayString()
@@ -47,7 +45,7 @@ class FeedStore(private val context: Context) {
 
     suspend fun save(entries: List<StoredFeedEntry>) {
         context.feedDataStore.edit { prefs ->
-            prefs[Keys.ENTRIES] = json.encodeToString(entries)
+            prefs[entriesKey] = json.encodeToString(entries)
         }
     }
 
