@@ -1,6 +1,7 @@
 package com.jadatoui.healthlogger
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jadatoui.healthlogger.data.FeedStore
@@ -13,6 +14,7 @@ import com.jadatoui.healthlogger.net.EntryColor
 import com.jadatoui.healthlogger.net.EntryType
 import com.jadatoui.healthlogger.net.HealthLogClient
 import com.jadatoui.healthlogger.net.InsightsResult
+import com.jadatoui.healthlogger.net.LabelPhoto
 import com.jadatoui.healthlogger.net.LogResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +39,8 @@ data class PendingRetry(
     val color: EntryColor,
     val isUndo: Boolean,
     val isDiary: Boolean = false,
+    /** Encoded package photo; when set, [entry] is the optional note (e.g. "x2"). */
+    val photo: ByteArray? = null,
 )
 
 enum class LogMode { HEALTH, DIARY, INSIGHTS }
@@ -105,6 +109,26 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
         dispatch(PendingRetry(type, entry, color, isUndo = false))
     }
 
+    /** Encodes a package photo and sends it; n8n reads the label and logs it as food. */
+    fun logPhoto(uri: Uri, note: String?) {
+        if (_state.value.sending) return
+        _state.update { it.copy(sending = true, retry = null) }
+
+        viewModelScope.launch {
+            val jpeg = runCatching { LabelPhoto.loadForUpload(getApplication(), uri) }
+                .getOrElse { e ->
+                    val newFeed = listOf(
+                        FeedEntry("Couldn't read that photo: ${e.message}", FeedEntry.Status.ERROR),
+                    ) + _state.value.feed
+                    _state.update { it.copy(sending = false, feed = newFeed) }
+                    persistFeed(feedStore, newFeed)
+                    return@launch
+                }
+            _state.update { it.copy(sending = false) }
+            dispatch(PendingRetry(EntryType.FOOD, note, EntryColor.NONE, isUndo = false, photo = jpeg))
+        }
+    }
+
     fun undo() {
         dispatch(PendingRetry(null, null, EntryColor.NONE, isUndo = true))
     }
@@ -161,6 +185,7 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
                 action.isDiary && action.isUndo -> client.undoDiary(settings)
                 action.isDiary -> client.logDiary(settings, action.entry.orEmpty())
                 action.isUndo -> client.undo(settings)
+                action.photo != null -> client.logPhoto(settings, action.photo, action.entry)
                 else -> client.log(settings, action.type!!, action.entry, action.color)
             }
 

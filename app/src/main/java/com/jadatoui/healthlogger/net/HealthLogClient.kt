@@ -1,6 +1,7 @@
 package com.jadatoui.healthlogger.net
 
 import com.jadatoui.healthlogger.data.Settings
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -43,6 +44,28 @@ private data class LogRequest(
 @Serializable
 private data class DiaryRequest(val text: String)
 
+/**
+ * Package photo for the workflow's "Is Photo?" branch, which reads the label with Claude.
+ * No defaults on [type]/[mimeType]: the encoder drops default-valued fields, and n8n needs both.
+ */
+@Serializable
+private data class PhotoRequest(
+    val type: String,
+    val image: String,
+    val mimeType: String,
+    val note: String? = null,
+)
+
+/** What Claude read off a package photo. */
+@Serializable
+data class DetectedLabel(
+    val brand: String = "",
+    val product: String = "",
+    val variant: String = "",
+    val entry: String = "",
+    val confidence: String = "",
+)
+
 /** Shape produced by the "Build App Response" node in n8n. */
 @Serializable
 data class LogResponse(
@@ -55,6 +78,9 @@ data class LogResponse(
     @SerialName("colorInvalid") val colorInvalid: String? = null,
     val reason: String? = null,
     val message: String = "",
+    /** "photo" when the entry was read from a package photo. */
+    val source: String? = null,
+    val detected: DetectedLabel? = null,
 )
 
 sealed interface LogResult {
@@ -92,8 +118,8 @@ class HealthLogClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    /** Insights summaries are LLM-generated and can take much longer than a plain log write. */
-    private val insightsHttp = http.newBuilder()
+    /** Insights summaries and photo label reads are LLM-generated and can take much longer than a plain log write. */
+    private val slowHttp = http.newBuilder()
         .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
@@ -120,6 +146,29 @@ class HealthLogClient {
                     color = color.wire,
                 ),
             ),
+        )
+    }
+
+    suspend fun logPhoto(settings: Settings, jpeg: ByteArray, note: String? = null): LogResult {
+        if (!settings.isConfigured) {
+            return LogResult.Failure(
+                "Set the webhook URL and auth header in Settings first.",
+                retryable = false,
+            )
+        }
+        return post(
+            url = settings.webhookUrl,
+            settings = settings,
+            body = json.encodeToString(
+                PhotoRequest.serializer(),
+                PhotoRequest(
+                    type = "photo",
+                    image = Base64.encodeToString(jpeg, Base64.NO_WRAP),
+                    mimeType = "image/jpeg",
+                    note = note?.trim()?.ifBlank { null },
+                ),
+            ),
+            client = slowHttp,
         )
     }
 
@@ -172,7 +221,7 @@ class HealthLogClient {
                 retryable = false,
             )
         }
-        return when (val raw = postRaw(settings.insightsUrl, settings, "{}", client = insightsHttp)) {
+        return when (val raw = postRaw(settings.insightsUrl, settings, "{}", client = slowHttp)) {
             is RawResponse.Body -> {
                 val parsed = runCatching {
                     json.decodeFromString(InsightsResponse.serializer(), raw.text)
@@ -192,8 +241,13 @@ class HealthLogClient {
         }
     }
 
-    private suspend fun post(url: String, settings: Settings, body: String): LogResult =
-        when (val raw = postRaw(url, settings, body)) {
+    private suspend fun post(
+        url: String,
+        settings: Settings,
+        body: String,
+        client: OkHttpClient = http,
+    ): LogResult =
+        when (val raw = postRaw(url, settings, body, client)) {
             is RawResponse.Body -> {
                 val parsed = runCatching {
                     json.decodeFromString(LogResponse.serializer(), raw.text)

@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
                     LogScreen(
                         state = state,
                         onLog = vm::log,
+                        onLogPhoto = vm::logPhoto,
                         onUndo = vm::undo,
                         onRetry = vm::retry,
                         onOpenSettings = { showSettings = true },

@@ -1,5 +1,9 @@
 package com.jadatoui.healthlogger.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -31,6 +35,8 @@ import androidx.compose.material.icons.filled.Egg
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LunchDining
 import androidx.compose.material.icons.filled.Medication
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Wc
 import androidx.compose.material.icons.filled.Settings
@@ -62,10 +68,12 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -79,12 +87,14 @@ import com.jadatoui.healthlogger.LogMode
 import com.jadatoui.healthlogger.UiState
 import com.jadatoui.healthlogger.net.EntryColor
 import com.jadatoui.healthlogger.net.EntryType
+import com.jadatoui.healthlogger.net.LabelPhoto
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogScreen(
     state: UiState,
     onLog: (EntryType, String?, EntryColor) -> Unit,
+    onLogPhoto: (Uri, String?) -> Unit,
     onUndo: () -> Unit,
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -233,6 +243,10 @@ fun LogScreen(
                     ),
                     enabled = !state.sending,
                 )
+
+                HorizontalDivider()
+
+                ScanLabelSection(enabled = !state.sending, onLogPhoto = onLogPhoto)
 
                 HorizontalDivider()
 
@@ -443,6 +457,72 @@ fun LogScreen(
                         .padding(bottom = 24.dp),
                 )
             }
+        }
+    }
+}
+
+/** Photograph a food package; n8n reads the label with Claude and logs it as food. */
+@Composable
+private fun ScanLabelSection(
+    enabled: Boolean,
+    onLogPhoto: (Uri, String?) -> Unit,
+) {
+    val context = LocalContext.current
+    var note by remember { mutableStateOf("") }
+    // Saveable: the activity can be recreated while the camera app is in front.
+    var pendingCapture by rememberSaveable { mutableStateOf<Uri?>(null) }
+
+    fun send(uri: Uri) {
+        onLogPhoto(uri, note.ifBlank { null })
+        note = ""
+    }
+
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val uri = pendingCapture
+        pendingCapture = null
+        when {
+            uri == null -> Unit
+            saved -> send(uri)
+            else -> runCatching { context.contentResolver.delete(uri, null, null) }
+        }
+    }
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) send(uri)
+    }
+
+    Text("Scan a label", style = MaterialTheme.typography.titleSmall)
+
+    OutlinedTextField(
+        value = note,
+        onValueChange = { note = it },
+        label = { Text("Note (optional, e.g. x2, half)") },
+        singleLine = true,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+            onClick = {
+                val uri = LabelPhoto.newCaptureUri(context)
+                pendingCapture = uri
+                takePicture.launch(uri)
+            },
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        ) {
+            Icon(Icons.Default.PhotoCamera, contentDescription = null)
+            Text("Camera", modifier = Modifier.padding(start = 6.dp))
+        }
+        OutlinedButton(
+            onClick = {
+                pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        ) {
+            Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+            Text("Gallery", modifier = Modifier.padding(start = 6.dp))
         }
     }
 }
