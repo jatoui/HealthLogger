@@ -103,8 +103,9 @@ fun LogScreen(
     onUndoDiary: () -> Unit,
     onFetchInsights: () -> Unit,
 ) {
-    var entry by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(EntryType.FOOD) }
+    // Saveable: the activity can be recreated while the camera app is in front.
+    var entry by rememberSaveable { mutableStateOf("") }
+    var type by rememberSaveable { mutableStateOf(EntryType.FOOD) }
     var color by remember { mutableStateOf(EntryColor.NONE) }
     var colorMenuOpen by remember { mutableStateOf(false) }
     var medMenuOpen by remember { mutableStateOf(false) }
@@ -246,10 +247,6 @@ fun LogScreen(
 
                 HorizontalDivider()
 
-                ScanLabelSection(enabled = !state.sending, onLogPhoto = onLogPhoto)
-
-                HorizontalDivider()
-
                 Text("Meds", style = MaterialTheme.typography.titleSmall)
 
                 ExposedDropdownMenuBox(
@@ -304,9 +301,21 @@ fun LogScreen(
                     value = entry,
                     onValueChange = { entry = it },
                     label = { Text(if (type == EntryType.FOOD) "What did you have?" else "Note (optional)") },
+                    supportingText = if (type == EntryType.FOOD) {
+                        { Text("Or scan a label — this text is sent as a note (e.g. x2, half)") }
+                    } else {
+                        null
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                if (type == EntryType.FOOD) {
+                    LabelPhotoButtons(enabled = !state.sending) { uri ->
+                        onLogPhoto(uri, entry.ifBlank { null })
+                        entry = ""
+                    }
+                }
 
                 ExposedDropdownMenuBox(
                     expanded = colorMenuOpen,
@@ -463,43 +472,26 @@ fun LogScreen(
 
 /** Photograph a food package; n8n reads the label with Claude and logs it as food. */
 @Composable
-private fun ScanLabelSection(
+private fun LabelPhotoButtons(
     enabled: Boolean,
-    onLogPhoto: (Uri, String?) -> Unit,
+    onPhoto: (Uri) -> Unit,
 ) {
     val context = LocalContext.current
-    var note by remember { mutableStateOf("") }
     // Saveable: the activity can be recreated while the camera app is in front.
     var pendingCapture by rememberSaveable { mutableStateOf<Uri?>(null) }
-
-    fun send(uri: Uri) {
-        onLogPhoto(uri, note.ifBlank { null })
-        note = ""
-    }
 
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
         val uri = pendingCapture
         pendingCapture = null
         when {
             uri == null -> Unit
-            saved -> send(uri)
+            saved -> onPhoto(uri)
             else -> runCatching { context.contentResolver.delete(uri, null, null) }
         }
     }
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) send(uri)
+        if (uri != null) onPhoto(uri)
     }
-
-    Text("Scan a label", style = MaterialTheme.typography.titleSmall)
-
-    OutlinedTextField(
-        value = note,
-        onValueChange = { note = it },
-        label = { Text("Note (optional, e.g. x2, half)") },
-        singleLine = true,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-    )
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(
