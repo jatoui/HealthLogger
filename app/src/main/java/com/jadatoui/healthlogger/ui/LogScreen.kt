@@ -23,6 +23,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -82,6 +86,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jadatoui.healthlogger.DIARY_RETAIN_DAYS
 import com.jadatoui.healthlogger.FeedEntry
 import com.jadatoui.healthlogger.LogMode
 import com.jadatoui.healthlogger.UiState
@@ -453,7 +458,11 @@ fun LogScreen(
                 HorizontalDivider()
 
                 Text(
-                    "Today's log (${feed.size})",
+                    if (state.mode == LogMode.DIARY) {
+                        "Last $DIARY_RETAIN_DAYS days (${feed.size})"
+                    } else {
+                        "Today's log (${feed.size})"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -688,7 +697,16 @@ private fun FeedList(items: List<FeedEntry>, modifier: Modifier = Modifier) {
                 .padding(end = 10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            items(items) { item -> FeedRow(item) }
+            // Group by local day; headers only appear once the feed spans more than one day.
+            val byDay = items.groupBy { localDayOf(it.timestampMillis) }
+            if (byDay.size <= 1) {
+                items(items) { item -> FeedRow(item) }
+            } else {
+                byDay.forEach { (day, dayItems) ->
+                    item(key = "header-$day") { FeedDayHeader(day) }
+                    items(dayItems) { item -> FeedRow(item) }
+                }
+            }
         }
 
         val needsScrollbar by remember(items.size) {
@@ -745,6 +763,27 @@ private fun FeedScrollbar(state: LazyListState, modifier: Modifier = Modifier) {
             cornerRadius = CornerRadius(size.width / 2),
         )
     }
+}
+
+private fun localDayOf(timestampMillis: Long): LocalDate =
+    Instant.ofEpochMilli(timestampMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+
+private val feedDayFormat = DateTimeFormatter.ofPattern("EEE d MMM")
+
+@Composable
+private fun FeedDayHeader(day: LocalDate) {
+    val today = LocalDate.now(ZoneId.systemDefault())
+    val label = when (day) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> day.format(feedDayFormat)
+    }
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 4.dp),
+    )
 }
 
 @Composable

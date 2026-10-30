@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
@@ -26,21 +27,27 @@ data class StoredFeedEntry(
 
 /**
  * Persists the on-screen activity feed so it survives process death (backgrounding,
- * phone reboot, etc.) for the rest of the current day. Entries tagged with an older
- * [StoredFeedEntry.day] are dropped on read, so the feed naturally resets each day.
+ * phone reboot, etc.). Only the last [retainDays] local days are kept: entries tagged
+ * with an older [StoredFeedEntry.day] are dropped on read, so with the default of 1
+ * the feed naturally resets each day.
  */
-class FeedStore(private val context: Context, key: String = "entries_json") {
+class FeedStore(
+    private val context: Context,
+    key: String = "entries_json",
+    private val retainDays: Long = 1,
+) {
 
     private val entriesKey = stringPreferencesKey(key)
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    val todaysEntries: Flow<List<StoredFeedEntry>> = context.feedDataStore.data.map { prefs ->
+    val recentEntries: Flow<List<StoredFeedEntry>> = context.feedDataStore.data.map { prefs ->
         val raw = prefs[entriesKey]
         if (raw.isNullOrBlank()) return@map emptyList()
         val all = runCatching { json.decodeFromString<List<StoredFeedEntry>>(raw) }.getOrDefault(emptyList())
-        val today = todayString()
-        all.filter { it.day == today }
+        // ISO dates sort lexically, so a string compare is a date compare.
+        val oldestKept = LocalDate.now(ZoneId.systemDefault()).minusDays(retainDays - 1).toString()
+        all.filter { it.day >= oldestKept }
     }
 
     suspend fun save(entries: List<StoredFeedEntry>) {
@@ -50,6 +57,8 @@ class FeedStore(private val context: Context, key: String = "entries_json") {
     }
 
     companion object {
-        fun todayString(): String = LocalDate.now(ZoneId.systemDefault()).toString()
+        /** The local day an entry was logged on, e.g. "2026-10-30". */
+        fun dayOf(timestampMillis: Long): String =
+            Instant.ofEpochMilli(timestampMillis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
     }
 }

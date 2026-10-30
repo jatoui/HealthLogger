@@ -45,6 +45,9 @@ data class PendingRetry(
 
 enum class LogMode { HEALTH, DIARY, INSIGHTS }
 
+/** How many local days of diary sends the Diary tab keeps; the health feed still resets daily. */
+const val DIARY_RETAIN_DAYS = 7L
+
 /** Result of the last AI insights request, shown on the Insights tab. */
 data class InsightsState(
     val loading: Boolean = false,
@@ -60,7 +63,7 @@ data class UiState(
     val retry: PendingRetry? = null,
     val mode: LogMode = LogMode.HEALTH,
     val insights: InsightsState = InsightsState(),
-    /** Today's diary sends, kept separate from [feed] and shown only on the Diary tab. */
+    /** Recent diary sends (last [DIARY_RETAIN_DAYS] days), kept separate from [feed] and shown only on the Diary tab. */
     val diaryFeed: List<FeedEntry> = emptyList(),
 )
 
@@ -68,7 +71,7 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = SettingsStore(app)
     private val feedStore = FeedStore(app)
-    private val diaryFeedStore = FeedStore(app, key = "diary_entries_json")
+    private val diaryFeedStore = FeedStore(app, key = "diary_entries_json", retainDays = DIARY_RETAIN_DAYS)
     private val insightsStore = InsightsStore(app)
     private val client = HealthLogClient()
 
@@ -82,10 +85,10 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch {
-            val restored = feedStore.todaysEntries.first().map { stored ->
+            val restored = feedStore.recentEntries.first().map { stored ->
                 FeedEntry(stored.text, FeedEntry.Status.valueOf(stored.status), stored.timestampMillis)
             }
-            val restoredDiary = diaryFeedStore.todaysEntries.first().map { stored ->
+            val restoredDiary = diaryFeedStore.recentEntries.first().map { stored ->
                 FeedEntry(stored.text, FeedEntry.Status.valueOf(stored.status), stored.timestampMillis)
             }
             if (restored.isNotEmpty() || restoredDiary.isNotEmpty()) {
@@ -229,9 +232,10 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun persistFeed(target: FeedStore, feed: List<FeedEntry>) {
         viewModelScope.launch {
-            val today = FeedStore.todayString()
             target.save(
-                feed.map { StoredFeedEntry(it.text, it.status.name, it.timestampMillis, today) },
+                feed.map {
+                    StoredFeedEntry(it.text, it.status.name, it.timestampMillis, FeedStore.dayOf(it.timestampMillis))
+                },
             )
         }
     }
