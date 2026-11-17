@@ -41,15 +41,26 @@ data class PendingRetry(
     val isDiary: Boolean = false,
     /** Encoded package photo; when set, [entry] is the optional note (e.g. "x2"). */
     val photo: ByteArray? = null,
+    /** Which tab's log the result is written to (and where the Retry prompt shows). */
+    val tab: LogMode = if (isDiary) LogMode.DIARY else LogMode.FOOD,
 )
 
-enum class LogMode { HEALTH, DIARY, INSIGHTS }
+enum class LogMode { FOOD, BATHROOM, DIARY, INSIGHTS }
+
+/** Entry types that belong on the Bathroom tab; everything else health-related is on Food. */
+val BATHROOM_TYPES = listOf(EntryType.POOP, EntryType.PISS)
+
+/** The tab whose log a health entry of [type] is written to. */
+fun tabFor(type: EntryType): LogMode = if (type in BATHROOM_TYPES) LogMode.BATHROOM else LogMode.FOOD
 
 /** How many local days of diary sends the Diary tab keeps. */
 const val DIARY_RETAIN_DAYS = 7L
 
-/** How many local days of health sends the Health tab keeps. */
-const val HEALTH_RETAIN_DAYS = 2L
+/** How many local days of sends the Food tab keeps. */
+const val FOOD_RETAIN_DAYS = 2L
+
+/** How many local days of sends the Bathroom tab keeps. */
+const val BATHROOM_RETAIN_DAYS = 2L
 
 /** Result of the last AI insights request, shown on the Insights tab. */
 data class InsightsState(
@@ -62,19 +73,42 @@ data class InsightsState(
 data class UiState(
     val settings: Settings = Settings(),
     val sending: Boolean = false,
+    /** Recent food/med sends (last [FOOD_RETAIN_DAYS] days), shown only on the Food tab. */
     val feed: List<FeedEntry> = emptyList(),
     val retry: PendingRetry? = null,
-    val mode: LogMode = LogMode.HEALTH,
+    val mode: LogMode = LogMode.FOOD,
     val insights: InsightsState = InsightsState(),
     /** Recent diary sends (last [DIARY_RETAIN_DAYS] days), kept separate from [feed] and shown only on the Diary tab. */
     val diaryFeed: List<FeedEntry> = emptyList(),
-)
+    /** Recent poop/piss sends (last [BATHROOM_RETAIN_DAYS] days), shown only on the Bathroom tab. */
+    val bathroomFeed: List<FeedEntry> = emptyList(),
+) {
+    fun feedFor(tab: LogMode): List<FeedEntry> = when (tab) {
+        LogMode.BATHROOM -> bathroomFeed
+        LogMode.DIARY -> diaryFeed
+        else -> feed
+    }
+
+    fun withFeed(tab: LogMode, entries: List<FeedEntry>): UiState = when (tab) {
+        LogMode.BATHROOM -> copy(bathroomFeed = entries)
+        LogMode.DIARY -> copy(diaryFeed = entries)
+        else -> copy(feed = entries)
+    }
+}
 
 class LogViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = SettingsStore(app)
-    private val feedStore = FeedStore(app, retainDays = HEALTH_RETAIN_DAYS)
+    // "entries_json" is the pre-split health log; it now holds Food only (old poop/piss rows age out).
+    private val feedStore = FeedStore(app, retainDays = FOOD_RETAIN_DAYS)
+    private val bathroomFeedStore = FeedStore(app, key = "bathroom_entries_json", retainDays = BATHROOM_RETAIN_DAYS)
     private val diaryFeedStore = FeedStore(app, key = "diary_entries_json", retainDays = DIARY_RETAIN_DAYS)
+
+    private fun storeFor(tab: LogMode): FeedStore = when (tab) {
+        LogMode.BATHROOM -> bathroomFeedStore
+        LogMode.DIARY -> diaryFeedStore
+        else -> feedStore
+    }
     private val insightsStore = InsightsStore(app)
     private val client = HealthLogClient()
 
@@ -88,14 +122,14 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch {
-            val restored = feedStore.recentEntries.first().map { stored ->
+            suspend fun restore(store: FeedStore) = store.recentEntries.first().map { stored ->
                 FeedEntry(stored.text, FeedEntry.Status.valueOf(stored.status), stored.timestampMillis)
             }
-            val restoredDiary = diaryFeedStore.recentEntries.first().map { stored ->
-                FeedEntry(stored.text, FeedEntry.Status.valueOf(stored.status), stored.timestampMillis)
-            }
-            if (restored.isNotEmpty() || restoredDiary.isNotEmpty()) {
-                _state.update { it.copy(feed = restored, diaryFeed = restoredDiary) }
+            val restored = restore(feedStore)
+            val restoredBathroom = restore(bathroomFeedStore)
+            val restoredDiary = restore(diaryFeedStore)
+            _state.update {
+                it.copy(feed = restored, bathroomFeed = restoredBathroom, diaryFeed = restoredDiary)
             }
         }
         viewModelScope.launch {
@@ -112,7 +146,7 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun log(type: EntryType, entry: String?, color: EntryColor = EntryColor.NONE) {
-        dispatch(PendingRetry(type, entry, color, isUndo = false))
+        dispatch(PendingRetry(type, entry, color, isUndo = false, tab = tabFor(type)))
     }
 
     /** Encodes a package photo and sends it; n8n reads the label and logs it as food. */
@@ -135,8 +169,9 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun undo() {
-        dispatch(PendingRetry(null, null, EntryColor.NONE, isUndo = true))
+    /** Undo the last health-sheet row; the result is shown in [tab]'s log. */
+    fun undo(tab: LogMode) {
+        dispatch(PendingRetry(null, null, EntryColor.NONE, isUndo = true, tab = tab))
     }
 
     fun undoDiary() {
@@ -214,22 +249,9 @@ class LogViewModel(app: Application) : AndroidViewModel(app) {
                         (action.takeIf { result.retryable })
             }
 
-            if (action.isDiary) {
-                val newDiaryFeed = listOf(entry) + _state.value.diaryFeed
-                _state.update { it.copy(sending = false, diaryFeed = newDiaryFeed, retry = retry) }
-                persistFeed(diaryFeedStore, newDiaryFeed)
-                return@launch
-            }
-
-            val newFeed = listOf(entry) + _state.value.feed
-            _state.update {
-                it.copy(
-                    sending = false,
-                    feed = newFeed,
-                    retry = retry,
-                )
-            }
-            persistFeed(feedStore, newFeed)
+            val newFeed = listOf(entry) + _state.value.feedFor(action.tab)
+            _state.update { it.withFeed(action.tab, newFeed).copy(sending = false, retry = retry) }
+            persistFeed(storeFor(action.tab), newFeed)
         }
     }
 

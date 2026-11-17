@@ -86,9 +86,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jadatoui.healthlogger.BATHROOM_RETAIN_DAYS
+import com.jadatoui.healthlogger.BATHROOM_TYPES
 import com.jadatoui.healthlogger.DIARY_RETAIN_DAYS
 import com.jadatoui.healthlogger.FeedEntry
-import com.jadatoui.healthlogger.HEALTH_RETAIN_DAYS
+import com.jadatoui.healthlogger.FOOD_RETAIN_DAYS
 import com.jadatoui.healthlogger.LogMode
 import com.jadatoui.healthlogger.UiState
 import com.jadatoui.healthlogger.net.EntryColor
@@ -101,7 +103,7 @@ fun LogScreen(
     state: UiState,
     onLog: (EntryType, String?, EntryColor) -> Unit,
     onLogPhoto: (Uri, String?) -> Unit,
-    onUndo: () -> Unit,
+    onUndo: (LogMode) -> Unit,
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onModeChange: (LogMode) -> Unit,
@@ -109,16 +111,10 @@ fun LogScreen(
     onUndoDiary: () -> Unit,
     onFetchInsights: () -> Unit,
 ) {
-    // Saveable: the activity can be recreated while the camera app is in front.
-    var entry by rememberSaveable { mutableStateOf("") }
-    var type by rememberSaveable { mutableStateOf(EntryType.FOOD) }
-    var color by remember { mutableStateOf(EntryColor.NONE) }
-    var colorMenuOpen by remember { mutableStateOf(false) }
     var medMenuOpen by remember { mutableStateOf(false) }
 
     var diaryText by remember { mutableStateOf("") }
     var awaitingDiarySend by remember { mutableStateOf(false) }
-    var awaitingHealthSend by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.sending) {
         if (!state.sending && awaitingDiarySend) {
@@ -127,12 +123,6 @@ fun LogScreen(
             val rejected = state.diaryFeed.firstOrNull()?.status == FeedEntry.Status.WARN
             if (state.retry == null && !rejected) {
                 diaryText = ""
-            }
-        }
-        if (!state.sending && awaitingHealthSend) {
-            awaitingHealthSend = false
-            if (state.retry == null) {
-                type = EntryType.FOOD
             }
         }
     }
@@ -159,21 +149,18 @@ fun LogScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = state.mode == LogMode.HEALTH,
-                    onClick = { onModeChange(LogMode.HEALTH) },
-                    label = { Text("Health") },
-                )
-                FilterChip(
-                    selected = state.mode == LogMode.DIARY,
-                    onClick = { onModeChange(LogMode.DIARY) },
-                    label = { Text("Diary") },
-                )
-                FilterChip(
-                    selected = state.mode == LogMode.INSIGHTS,
-                    onClick = { onModeChange(LogMode.INSIGHTS) },
-                    label = { Text("Insights") },
-                )
+                listOf(
+                    LogMode.FOOD to "Food",
+                    LogMode.BATHROOM to "Bathroom",
+                    LogMode.DIARY to "Diary",
+                    LogMode.INSIGHTS to "Insights",
+                ).forEach { (mode, label) ->
+                    FilterChip(
+                        selected = state.mode == mode,
+                        onClick = { onModeChange(mode) },
+                        label = { Text(label) },
+                    )
+                }
             }
 
             if (!state.settings.isConfigured) {
@@ -197,258 +184,193 @@ fun LogScreen(
                 }
             }
 
-            if (state.mode == LogMode.INSIGHTS) {
-                InsightsPanel(
+            when (state.mode) {
+                LogMode.INSIGHTS -> InsightsPanel(
                     state = state,
                     onFetchInsights = onFetchInsights,
                     onOpenSettings = onOpenSettings,
                 )
-            } else if (state.mode == LogMode.HEALTH) {
-                Text("Quick log", style = MaterialTheme.typography.titleSmall)
 
-                QuickActionGrid(
-                    items = listOf(
-                        // Food
-                        QuickActionSpec("Coffee", Icons.Default.Coffee) {
-                            onLog(EntryType.FOOD, "coffee", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Decaf Coffee", Icons.Default.Coffee) {
-                            onLog(EntryType.FOOD, "decaf coffee", EntryColor.NONE)
-                        },
-                        QuickActionSpec("PB & Jelly", Icons.Default.LunchDining) {
-                            onLog(EntryType.FOOD, "pb jelly", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Kashi + Milk", Icons.Default.BreakfastDining) {
-                            onLog(EntryType.FOOD, "kashi soy milk", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Oatmeal", Icons.Default.BreakfastDining) {
-                            onLog(EntryType.FOOD, "oatmeal", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Boiled Eggs", Icons.Default.Egg) {
-                            onLog(EntryType.FOOD, "hard boiled eggs", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Banana", emoji = "🍌") {
-                            onLog(EntryType.FOOD, "banana", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Walnuts", emoji = "🌰") {
-                            onLog(EntryType.FOOD, "walnuts", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Hummus", emoji = "🫘") {
-                            onLog(EntryType.FOOD, "hummus", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Dried Apricots", emoji = "🍑") {
-                            onLog(EntryType.FOOD, "dried apricots", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Mandarin", emoji = "🍊") {
-                            onLog(EntryType.FOOD, "mandarin", EntryColor.NONE)
-                        },
-                        QuickActionSpec("Waffles", emoji = "🧇") {
-                            onLog(EntryType.FOOD, "waffles", EntryColor.NONE)
-                        },
-                        // Poop
-                        QuickActionSpec("Poop", Icons.Default.Wc) {
-                            onLog(EntryType.POOP, null, EntryColor.NONE)
-                        },
-                        QuickActionSpec("Diarrhea", Icons.Default.Wc) {
-                            onLog(EntryType.POOP, "diarrhea", EntryColor.RED)
-                        },
-                        // Piss
-                        QuickActionSpec("Piss", Icons.Default.Wc) {
-                            onLog(EntryType.PISS, null, EntryColor.NONE)
-                        },
-                    ),
-                    enabled = !state.sending,
-                )
+                LogMode.FOOD -> {
+                    Text("Quick log", style = MaterialTheme.typography.titleSmall)
 
-                HorizontalDivider()
-
-                Text("Meds", style = MaterialTheme.typography.titleSmall)
-
-                ExposedDropdownMenuBox(
-                    expanded = medMenuOpen,
-                    onExpandedChange = { if (!state.sending) medMenuOpen = it },
-                ) {
-                    OutlinedTextField(
-                        value = "",
-                        onValueChange = {},
-                        readOnly = true,
+                    QuickActionGrid(
+                        items = listOf(
+                            QuickActionSpec("Coffee", Icons.Default.Coffee) {
+                                onLog(EntryType.FOOD, "coffee", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Decaf Coffee", Icons.Default.Coffee) {
+                                onLog(EntryType.FOOD, "decaf coffee", EntryColor.NONE)
+                            },
+                            QuickActionSpec("PB & Jelly", Icons.Default.LunchDining) {
+                                onLog(EntryType.FOOD, "pb jelly", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Kashi + Milk", Icons.Default.BreakfastDining) {
+                                onLog(EntryType.FOOD, "kashi soy milk", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Oatmeal", Icons.Default.BreakfastDining) {
+                                onLog(EntryType.FOOD, "oatmeal", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Boiled Eggs", Icons.Default.Egg) {
+                                onLog(EntryType.FOOD, "hard boiled eggs", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Banana", emoji = "🍌") {
+                                onLog(EntryType.FOOD, "banana", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Walnuts", emoji = "🌰") {
+                                onLog(EntryType.FOOD, "walnuts", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Hummus", emoji = "🫘") {
+                                onLog(EntryType.FOOD, "hummus", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Dried Apricots", emoji = "🍑") {
+                                onLog(EntryType.FOOD, "dried apricots", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Mandarin", emoji = "🍊") {
+                                onLog(EntryType.FOOD, "mandarin", EntryColor.NONE)
+                            },
+                            QuickActionSpec("Waffles", emoji = "🧇") {
+                                onLog(EntryType.FOOD, "waffles", EntryColor.NONE)
+                            },
+                        ),
                         enabled = !state.sending,
-                        placeholder = { Text("Tap a medication to log it") },
-                        leadingIcon = { Icon(Icons.Default.Medication, contentDescription = null) },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = medMenuOpen)
-                        },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
                     )
-                    ExposedDropdownMenu(
+
+                    HorizontalDivider()
+
+                    Text("Meds", style = MaterialTheme.typography.titleSmall)
+
+                    ExposedDropdownMenuBox(
                         expanded = medMenuOpen,
-                        onDismissRequest = { medMenuOpen = false },
+                        onExpandedChange = { if (!state.sending) medMenuOpen = it },
                     ) {
-                        MED_OPTIONS.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option.label) },
-                                onClick = {
-                                    medMenuOpen = false
-                                    onLog(EntryType.MED, option.wire, option.color)
-                                },
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider()
-
-                Text("Custom entry", style = MaterialTheme.typography.titleSmall)
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    EntryType.entries.forEach { option ->
-                        FilterChip(
-                            selected = type == option,
-                            onClick = { type = option },
-                            label = { Text(option.label) },
+                        OutlinedTextField(
+                            value = "",
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = !state.sending,
+                            placeholder = { Text("Tap a medication to log it") },
+                            leadingIcon = { Icon(Icons.Default.Medication, contentDescription = null) },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = medMenuOpen)
+                            },
+                            modifier = Modifier
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth(),
                         )
+                        ExposedDropdownMenu(
+                            expanded = medMenuOpen,
+                            onDismissRequest = { medMenuOpen = false },
+                        ) {
+                            MED_OPTIONS.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        medMenuOpen = false
+                                        onLog(EntryType.MED, option.wire, option.color)
+                                    },
+                                )
+                            }
+                        }
                     }
-                }
 
-                OutlinedTextField(
-                    value = entry,
-                    onValueChange = { entry = it },
-                    label = { Text(if (type == EntryType.FOOD) "What did you have?" else "Note (optional)") },
-                    supportingText = if (type == EntryType.FOOD) {
-                        { Text("Or scan a label — this text is sent as a note (e.g. x2, half)") }
-                    } else {
-                        null
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                    HorizontalDivider()
 
-                if (type == EntryType.FOOD) {
-                    LabelPhotoButtons(enabled = !state.sending) { uri ->
-                        onLogPhoto(uri, entry.ifBlank { null })
-                        entry = ""
-                    }
-                }
-
-                ExposedDropdownMenuBox(
-                    expanded = colorMenuOpen,
-                    onExpandedChange = { colorMenuOpen = it },
-                ) {
-                    OutlinedTextField(
-                        value = color.label,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Cell colour") },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = colorMenuOpen)
-                        },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
+                    CustomHealthEntry(
+                        state = state,
+                        types = EntryType.entries.filter { it !in BATHROOM_TYPES },
+                        onLog = onLog,
+                        onLogPhoto = onLogPhoto,
+                        onUndo = { onUndo(LogMode.FOOD) },
                     )
-                    ExposedDropdownMenu(
-                        expanded = colorMenuOpen,
-                        onDismissRequest = { colorMenuOpen = false },
-                    ) {
-                        EntryColor.entries.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option.label) },
-                                onClick = {
-                                    color = option
-                                    colorMenuOpen = false
-                                },
-                            )
-                        }
-                    }
                 }
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = {
-                            awaitingHealthSend = true
-                            onLog(type, entry.ifBlank { null }, color)
-                            entry = ""
-                            color = EntryColor.NONE
-                        },
-                        enabled = !state.sending &&
-                            (type != EntryType.FOOD || entry.isNotBlank()),
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        if (state.sending) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Text("Log it")
-                        }
-                    }
+                LogMode.BATHROOM -> {
+                    Text("Quick log", style = MaterialTheme.typography.titleSmall)
 
-                    OutlinedButton(onClick = onUndo, enabled = !state.sending) {
-                        Icon(Icons.Default.Undo, contentDescription = null)
-                        Text("Undo", modifier = Modifier.padding(start = 6.dp))
-                    }
+                    QuickActionGrid(
+                        items = listOf(
+                            QuickActionSpec("Poop", Icons.Default.Wc) {
+                                onLog(EntryType.POOP, null, EntryColor.NONE)
+                            },
+                            QuickActionSpec("Diarrhea", Icons.Default.Wc) {
+                                onLog(EntryType.POOP, "diarrhea", EntryColor.RED)
+                            },
+                            QuickActionSpec("Piss", Icons.Default.Wc) {
+                                onLog(EntryType.PISS, null, EntryColor.NONE)
+                            },
+                        ),
+                        enabled = !state.sending,
+                    )
+
+                    HorizontalDivider()
+
+                    CustomHealthEntry(
+                        state = state,
+                        types = BATHROOM_TYPES,
+                        onLog = onLog,
+                        onLogPhoto = onLogPhoto,
+                        onUndo = { onUndo(LogMode.BATHROOM) },
+                    )
                 }
-            } else {
-                Text("Quick log", style = MaterialTheme.typography.titleSmall)
 
-                QuickActionGrid(
-                    items = listOf(
-                        QuickActionSpec("F45", Icons.Default.FitnessCenter) { onLogDiary("f45") },
-                        QuickActionSpec("Run", Icons.AutoMirrored.Filled.DirectionsRun) { onLogDiary("run") },
-                        QuickActionSpec("Therapy", Icons.Default.Psychology) { onLogDiary("therapy") },
-                    ),
-                    enabled = !state.sending,
-                )
+                LogMode.DIARY -> {
+                    Text("Quick log", style = MaterialTheme.typography.titleSmall)
 
-                HorizontalDivider()
+                    QuickActionGrid(
+                        items = listOf(
+                            QuickActionSpec("F45", Icons.Default.FitnessCenter) { onLogDiary("f45") },
+                            QuickActionSpec("Run", Icons.AutoMirrored.Filled.DirectionsRun) { onLogDiary("run") },
+                            QuickActionSpec("Therapy", Icons.Default.Psychology) { onLogDiary("therapy") },
+                        ),
+                        enabled = !state.sending,
+                    )
 
-                Text("Diary entry", style = MaterialTheme.typography.titleSmall)
+                    HorizontalDivider()
 
-                OutlinedTextField(
-                    value = diaryText,
-                    onValueChange = { diaryText = it },
-                    label = { Text("What happened?") },
-                    minLines = 3,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                    Text("Diary entry", style = MaterialTheme.typography.titleSmall)
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = {
-                            awaitingDiarySend = true
-                            onLogDiary(diaryText)
-                        },
-                        enabled = !state.sending && diaryText.isNotBlank(),
-                        modifier = Modifier.weight(1f),
+                    OutlinedTextField(
+                        value = diaryText,
+                        onValueChange = { diaryText = it },
+                        label = { Text("What happened?") },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (state.sending) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Text("Log entry")
+                        Button(
+                            onClick = {
+                                awaitingDiarySend = true
+                                onLogDiary(diaryText)
+                            },
+                            enabled = !state.sending && diaryText.isNotBlank(),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            if (state.sending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Text("Log entry")
+                            }
                         }
-                    }
 
-                    OutlinedButton(onClick = onUndoDiary, enabled = !state.sending) {
-                        Icon(Icons.Default.Undo, contentDescription = null)
-                        Text("Undo", modifier = Modifier.padding(start = 6.dp))
+                        OutlinedButton(onClick = onUndoDiary, enabled = !state.sending) {
+                            Icon(Icons.Default.Undo, contentDescription = null)
+                            Text("Undo", modifier = Modifier.padding(start = 6.dp))
+                        }
                     }
                 }
             }
 
             if (state.mode != LogMode.INSIGHTS) {
-                if (state.retry != null) {
+                // Only offer Retry on the tab whose send failed.
+                if (state.retry?.tab == state.mode) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -463,16 +385,17 @@ fun LogScreen(
                 }
 
                 // Each tab shows only its own log.
-                val feed = if (state.mode == LogMode.DIARY) state.diaryFeed else state.feed
+                val feed = state.feedFor(state.mode)
+                val retainDays = when (state.mode) {
+                    LogMode.DIARY -> DIARY_RETAIN_DAYS
+                    LogMode.BATHROOM -> BATHROOM_RETAIN_DAYS
+                    else -> FOOD_RETAIN_DAYS
+                }
 
                 HorizontalDivider()
 
                 Text(
-                    if (state.mode == LogMode.DIARY) {
-                        "Last $DIARY_RETAIN_DAYS days (${feed.size})"
-                    } else {
-                        "Last $HEALTH_RETAIN_DAYS days (${feed.size})"
-                    },
+                    "Last $retainDays days (${feed.size})",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -485,6 +408,132 @@ fun LogScreen(
                         .padding(bottom = 24.dp),
                 )
             }
+        }
+    }
+}
+
+/**
+ * Free-text health entry for one tab: type chips limited to [types], note/food text,
+ * label photo (Food only), cell colour, Log it and Undo. Each tab gets its own state.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CustomHealthEntry(
+    state: UiState,
+    types: List<EntryType>,
+    onLog: (EntryType, String?, EntryColor) -> Unit,
+    onLogPhoto: (Uri, String?) -> Unit,
+    onUndo: () -> Unit,
+) {
+    val defaultType = types.first()
+    // Saveable: the activity can be recreated while the camera app is in front.
+    var entry by rememberSaveable { mutableStateOf("") }
+    var type by rememberSaveable { mutableStateOf(defaultType) }
+    var color by remember { mutableStateOf(EntryColor.NONE) }
+    var colorMenuOpen by remember { mutableStateOf(false) }
+    var awaitingSend by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.sending) {
+        if (!state.sending && awaitingSend) {
+            awaitingSend = false
+            if (state.retry == null) {
+                type = defaultType
+            }
+        }
+    }
+
+    Text("Custom entry", style = MaterialTheme.typography.titleSmall)
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        types.forEach { option ->
+            FilterChip(
+                selected = type == option,
+                onClick = { type = option },
+                label = { Text(option.label) },
+            )
+        }
+    }
+
+    OutlinedTextField(
+        value = entry,
+        onValueChange = { entry = it },
+        label = { Text(if (type == EntryType.FOOD) "What did you have?" else "Note (optional)") },
+        supportingText = if (type == EntryType.FOOD) {
+            { Text("Or scan a label — this text is sent as a note (e.g. x2, half)") }
+        } else {
+            null
+        },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    if (type == EntryType.FOOD) {
+        LabelPhotoButtons(enabled = !state.sending) { uri ->
+            onLogPhoto(uri, entry.ifBlank { null })
+            entry = ""
+        }
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = colorMenuOpen,
+        onExpandedChange = { colorMenuOpen = it },
+    ) {
+        OutlinedTextField(
+            value = color.label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Cell colour") },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = colorMenuOpen)
+            },
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = colorMenuOpen,
+            onDismissRequest = { colorMenuOpen = false },
+        ) {
+            EntryColor.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = {
+                        color = option
+                        colorMenuOpen = false
+                    },
+                )
+            }
+        }
+    }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = {
+                awaitingSend = true
+                onLog(type, entry.ifBlank { null }, color)
+                entry = ""
+                color = EntryColor.NONE
+            },
+            enabled = !state.sending &&
+                (type != EntryType.FOOD || entry.isNotBlank()),
+            modifier = Modifier.weight(1f),
+        ) {
+            if (state.sending) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Text("Log it")
+            }
+        }
+
+        OutlinedButton(onClick = onUndo, enabled = !state.sending) {
+            Icon(Icons.Default.Undo, contentDescription = null)
+            Text("Undo", modifier = Modifier.padding(start = 6.dp))
         }
     }
 }
