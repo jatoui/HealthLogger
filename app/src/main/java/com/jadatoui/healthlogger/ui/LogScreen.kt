@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jadatoui.healthlogger.DIARY_RETAIN_DAYS
 import com.jadatoui.healthlogger.FeedEntry
+import com.jadatoui.healthlogger.HEALTH_RETAIN_DAYS
 import com.jadatoui.healthlogger.LogMode
 import com.jadatoui.healthlogger.UiState
 import com.jadatoui.healthlogger.net.EntryColor
@@ -211,6 +212,9 @@ fun LogScreen(
                         QuickActionSpec("Coffee", Icons.Default.Coffee) {
                             onLog(EntryType.FOOD, "coffee", EntryColor.NONE)
                         },
+                        QuickActionSpec("Decaf Coffee", Icons.Default.Coffee) {
+                            onLog(EntryType.FOOD, "decaf coffee", EntryColor.NONE)
+                        },
                         QuickActionSpec("PB & Jelly", Icons.Default.LunchDining) {
                             onLog(EntryType.FOOD, "pb jelly", EntryColor.NONE)
                         },
@@ -226,8 +230,14 @@ fun LogScreen(
                         QuickActionSpec("Banana", emoji = "🍌") {
                             onLog(EntryType.FOOD, "banana", EntryColor.NONE)
                         },
-                        QuickActionSpec("Turkey Sandwich", Icons.Default.LunchDining) {
-                            onLog(EntryType.FOOD, "turkey sandwich", EntryColor.NONE)
+                        QuickActionSpec("Walnuts", emoji = "🌰") {
+                            onLog(EntryType.FOOD, "walnuts", EntryColor.NONE)
+                        },
+                        QuickActionSpec("Hummus", emoji = "🫘") {
+                            onLog(EntryType.FOOD, "hummus", EntryColor.NONE)
+                        },
+                        QuickActionSpec("Dried Apricots", emoji = "🍑") {
+                            onLog(EntryType.FOOD, "dried apricots", EntryColor.NONE)
                         },
                         QuickActionSpec("Mandarin", emoji = "🍊") {
                             onLog(EntryType.FOOD, "mandarin", EntryColor.NONE)
@@ -461,7 +471,7 @@ fun LogScreen(
                     if (state.mode == LogMode.DIARY) {
                         "Last $DIARY_RETAIN_DAYS days (${feed.size})"
                     } else {
-                        "Today's log (${feed.size})"
+                        "Last $HEALTH_RETAIN_DAYS days (${feed.size})"
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -45,8 +45,11 @@ data class PendingRetry(
 
 enum class LogMode { HEALTH, DIARY, INSIGHTS }
 
-/** How many local days of diary sends the Diary tab keeps; the health feed still resets daily. */
+/** How many local days of diary sends the Diary tab keeps. */
 const val DIARY_RETAIN_DAYS = 7L
+
+/** How many local days of health sends the Health tab keeps. */
+const val HEALTH_RETAIN_DAYS = 2L
 
 /** Result of the last AI insights request, shown on the Insights tab. */
 data class InsightsState(
@@ -70,7 +73,7 @@ data class UiState(
 class LogViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = SettingsStore(app)
-    private val feedStore = FeedStore(app)
+    private val feedStore = FeedStore(app, retainDays = HEALTH_RETAIN_DAYS)
     private val diaryFeedStore = FeedStore(app, key = "diary_entries_json", retainDays = DIARY_RETAIN_DAYS)
     private val insightsStore = InsightsStore(app)
     private val client = HealthLogClient()
